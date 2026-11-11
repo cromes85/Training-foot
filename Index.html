@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b1410">
+<title>Training Foot Live</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#0b1410;color:#eaf2ec;font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+#app{height:100dvh;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.top{padding:8px 10px;display:flex;gap:8px;align-items:center}
+.top select{flex:1;min-width:0;padding:9px;border-radius:10px;border:1px solid #2a3a2f;background:#18211b;color:#eaf2ec;font:inherit;font-size:15px}
+.top button{padding:9px 12px;border-radius:10px;border:1px solid #2a3a2f;background:#18211b;color:#eaf2ec;font:inherit;font-size:15px}
+#stagewrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
+#stage{position:relative;background:#000;overflow:hidden;border-radius:12px}
+#cam,#ov{position:absolute;inset:0;width:100%;height:100%}
+.mir{transform:scaleX(-1)}
+#panel{display:none;padding:4px 10px 8px;gap:8px;flex-direction:column;font-size:14px;color:#cfe0d4}
+#panel button{padding:9px;border-radius:10px;border:1px solid #2a3a2f;background:#18211b;color:#eaf2ec;font:inherit}
+#panel input{width:100%}
+#cam{object-fit:fill}
+#hud{position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;padding:10px 12px;pointer-events:none;z-index:2}
+.pill{background:rgba(0,0,0,.55);border-radius:14px;padding:6px 12px;text-align:center;min-width:76px}
+.pill b{display:block;font-size:30px;line-height:1.05;font-variant-numeric:tabular-nums}
+.pill span{font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.05em}
+#msg{position:absolute;left:12px;right:12px;bottom:12px;background:rgba(0,0,0,.65);padding:10px 12px;border-radius:12px;text-align:center;font-size:15px;z-index:2}
+#big{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:120px;font-weight:800;color:#fff;text-shadow:0 2px 20px #000;z-index:3;pointer-events:none}
+.bottom{padding:10px;display:flex;gap:8px}
+.bottom button{flex:1;padding:15px;border-radius:14px;border:0;font:inherit;font-weight:700;font-size:17px;background:#3dc476;color:#06210f}
+.bottom button.sec{background:#18211b;color:#eaf2ec;border:1px solid #2a3a2f}
+.bottom button[disabled]{opacity:.45}
+#start{position:absolute;inset:0;background:#0b1410;z-index:10;padding:22px 18px;overflow:auto}
+#start h1{margin:0 0 6px;font-size:24px}
+#start p{color:#9db0a2;margin:6px 0}
+#start ol{padding-left:20px;color:#cfe0d4}
+#start li{margin:6px 0}
+#start button{width:100%;padding:16px;border-radius:14px;border:0;background:#3dc476;color:#06210f;font:inherit;font-weight:800;font-size:18px;margin-top:14px}
+#err{background:#3a2415;border-left:4px solid #fb923c;padding:10px 12px;border-radius:8px;margin-top:12px;display:none}
+#res{position:absolute;inset:0;background:rgba(11,20,16,.92);z-index:6;display:none;padding:18px;overflow:auto}
+#res h2{margin:0 0 10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.st{background:#18211b;border:1px solid #2a3a2f;border-radius:12px;padding:10px}
+.st b{display:block;font-size:28px}
+.st span{font-size:12px;color:#9db0a2}
+.bar{height:12px;background:#223028;border-radius:99px;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;background:#3dc476}
+.tips{background:#18211b;border-radius:12px;padding:10px 12px;font-size:14px;color:#cfe0d4}
+#res button{width:100%;padding:14px;border-radius:12px;border:0;background:#3dc476;color:#06210f;font:inherit;font-weight:700;margin-top:10px}
+#res button.sec{background:#18211b;color:#eaf2ec;border:1px solid #2a3a2f}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="top">
+    <select id="exsel" aria-label="Exercice"></select>
+    <select id="durs" aria-label="Durée" style="flex:0 0 78px"><option value="30">30 s</option><option value="45">45 s</option><option value="60">60 s</option></select>
+    <button id="snd" aria-label="Son">🔊</button>
+    <button id="cfg" aria-label="Réglages">⚙</button>
+  </div>
+  <div id="panel">
+    <label for="sens">Sensibilité de détection</label>
+    <input type="range" id="sens" min="0.7" max="1.8" step="0.1" value="1.2">
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="dbg" checked style="width:auto"> Voir la détection (points violets)</label>
+    <button id="wide">🔭 Vue large (zoom minimum)</button>
+    <button id="flip">🔄 Caméra avant / arrière</button>
+    <span id="camnote" style="color:#9db0a2"></span>
+  </div>
+  <div id="stagewrap">
+    <div id="stage">
+      <video id="cam" class="mir" playsinline muted autoplay></video>
+      <canvas id="ov" class="mir"></canvas>
+      <div id="hud">
+        <div class="pill"><b id="cnt">0</b><span id="cntl">touches</span></div>
+        <div class="pill"><b id="tm">30</b><span>secondes</span></div>
+        <div class="pill"><b id="rt">0</b><span>/ 30 s</span></div>
+      </div>
+      <div id="msg">Touche le ballon sur l'image pour le repérer</div>
+      <div id="big"></div>
+    </div>
+    <div id="res"></div>
+  </div>
+  <div class="bottom">
+    <button class="sec" id="recal">🎯 Ballon</button>
+    <button id="go" disabled>▶ Départ</button>
+  </div>
+  <div id="start">
+    <h1>⚽ Training Foot Live</h1>
+    <p>La caméra frontale suit ton ballon en direct et compte tes touches ou tes changements de direction, comme en réalité augmentée.</p>
+    <ol>
+      <li>Pose le téléphone <b>à l'horizontale</b> (vue plus large), à 2,5–3 m, caméra vers toi, en voyant tes pieds en entier.</li>
+      <li>Ballon de couleur franche, bien éclairé, fond uni.</li>
+      <li>Touche le ballon sur l'image, puis lance le départ.</li>
+    </ol>
+    <p>Rien n'est envoyé : la vidéo est analysée uniquement sur ton téléphone.</p>
+    <button id="allow">Activer la caméra</button>
+    <div id="err"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+var EX = [
+ {id:"semelle", titre:"Semelle alternée", mode:"touches", cible:50, unite:"touches", conseil:"Ballon immobile, semelle droite puis gauche. Pointes des pieds, regard levé."},
+ {id:"interieur", titre:"Pat-pat intérieur du pied", mode:"touches", cible:60, unite:"touches", conseil:"Petites touches rapides de l'intérieur du pied, ballon collé aux pieds."},
+ {id:"slalom", titre:"Slalom serré (5 plots)", mode:"slalom", cible:12, unite:"virages", conseil:"5 objets tous les 50 cm, parcours de gauche à droite devant la caméra. Touches courtes, tête haute."},
+ {id:"balancier", titre:"Balancier gauche–droite", mode:"slalom", cible:20, unite:"virages", conseil:"Envoie le ballon de l'intérieur du pied droit vers la gauche puis inversement, en restant dans ton couloir."},
+ {id:"amorti", titre:"Passe au mur + amorti", mode:"touches", cible:15, unite:"touches", conseil:"Passe douce au mur, amortis en reculant le pied. Alterne les pieds."}
+];
+var $ = function(i){return document.getElementById(i)};
+var cam=$("cam"), ov=$("ov"), octx=ov.getContext("2d"), stage=$("stage");
+var PW=240, PH=180, pc=document.createElement("canvas"), pctx=pc.getContext("2d",{willReadFrequently:true});
+var VW=640, VH=480, stream=null, target=null, sound=true, sens=1.2, facing="user", mirror=true;
+var AC = null;
+
+$("exsel").innerHTML = EX.map(function(e){return '<option value="'+e.id+'">'+e.titre+'</option>'}).join("");
+function curEx(){ for(var i=0;i<EX.length;i++) if(EX[i].id===$("exsel").value) return EX[i]; return EX[0]; }
+function syncLabels(){ var e=curEx(); $("cntl").textContent = e.unite; $("msg").textContent = target ? e.conseil : "Touche le ballon sur l'image pour le repérer"; }
+$("exsel").addEventListener("change", function(){ if(!sess.on) syncLabels(); });
+$("snd").addEventListener("click", function(){ sound=!sound; $("snd").textContent = sound?"🔊":"🔇"; });
+
+function beep(f,d){
+  if(!sound) return;
+  try{
+    AC = AC || new (window.AudioContext||window.webkitAudioContext)();
+    var o=AC.createOscillator(), g=AC.createGain(); o.frequency.value=f; g.gain.value=0.08;
+    o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime+d);
+  }catch(e){}
+}
+
+/* ----- Caméra ----- */
+function fit(){
+  var wrap=$("stagewrap"), W=wrap.clientWidth, H=wrap.clientHeight, r=VW/VH;
+  var w=W, h=W/r; if(h>H){ h=H; w=H*r; }
+  stage.style.width=w+"px"; stage.style.height=h+"px";
+  $("res").style.width = "100%";
+}
+window.addEventListener("resize", fit);
+function setupVideo(){
+  VW = cam.videoWidth||640; VH = cam.videoHeight||480;
+  PW = 240; PH = Math.max(2,Math.round(PW*VH/VW)); pc.width=PW; pc.height=PH;
+  ov.width = VW; ov.height = VH; fit();
+}
+cam.addEventListener("resize", function(){ if(stream) setupVideo(); });
+function setMirror(){ mirror = (facing==="user"); cam.classList.toggle("mir",mirror); ov.classList.toggle("mir",mirror); }
+function startCam(){
+  var err=$("err"); err.style.display="none";
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    err.style.display="block"; err.textContent="Ce navigateur ne donne pas accès à la caméra, ou la page n'est pas ouverte en HTTPS."; return;
+  }
+  if(stream){ stream.getTracks().forEach(function(t){t.stop();}); stream=null; }
+  navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:1280},height:{ideal:960}},audio:false}).then(function(s){
+    stream=s; cam.srcObject=s; setMirror(); return cam.play();
+  }).then(function(){
+    setupVideo(); $("start").style.display="none"; syncLabels();
+    if(!started){ started=true; requestAnimationFrame(loop); }
+  }).catch(function(e){
+    err.style.display="block"; $("start").style.display="block";
+    err.textContent = "Caméra refusée ou indisponible ("+(e&&e.name?e.name:"erreur")+"). Autorise la caméra pour ce site dans les réglages du navigateur, puis réessaie.";
+  });
+}
+var started=false;
+$("allow").addEventListener("click", startCam);
+$("cfg").addEventListener("click", function(){ var p=$("panel"); p.style.display = p.style.display==="flex" ? "none" : "flex"; setTimeout(fit,50); });
+$("sens").addEventListener("input", function(){ sens=parseFloat(this.value); if(target) makeMatcher(); });
+$("flip").addEventListener("click", function(){ facing = facing==="user" ? "environment" : "user"; target=null; matcher=null; $("go").disabled=true; startCam(); });
+$("wide").addEventListener("click", function(){
+  var n=$("camnote"); n.textContent="";
+  try{
+    var tr=stream.getVideoTracks()[0], caps=tr.getCapabilities?tr.getCapabilities():{};
+    if(caps.zoom){ tr.applyConstraints({advanced:[{zoom:caps.zoom.min}]}); n.textContent="Zoom réglé au minimum ("+caps.zoom.min+"×)."; }
+    else n.textContent="Zoom non réglable sur cette caméra : recule, ou passe le téléphone à l'horizontale.";
+  }catch(e){ n.textContent="Zoom non réglable : recule ou passe à l'horizontale."; }
+});
+
+/* ----- Couleur de la balle ----- */
+function rgb2hsv(r,g,b){
+  r/=255;g/=255;b/=255; var mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn, h=0;
+  if(d>0){ if(mx===r) h=((g-b)/d)%6; else if(mx===g) h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if(h<0)h+=360; }
+  return {h:h,s:mx===0?0:d/mx,v:mx};
+}
+// l'affichage est en miroir : on convertit le clic en coordonnées de la vidéo
+stage.addEventListener("click", function(ev){
+  if(sess.on) return;
+  var rc=stage.getBoundingClientRect();
+  var fx = (ev.clientX-rc.left)/rc.width, fy=(ev.clientY-rc.top)/rc.height; if(mirror) fx=1-fx;
+  pctx.drawImage(cam,0,0,PW,PH);
+  var cx=Math.round(fx*PW), cy=Math.round(fy*PH), R=5;
+  var x0=Math.max(0,cx-R), y0=Math.max(0,cy-R), x1=Math.min(PW-1,cx+R), y1=Math.min(PH-1,cy+R);
+  var pd=pctx.getImageData(x0,y0,x1-x0+1,y1-y0+1).data, RR=[],GG=[],BB=[];
+  for(var q=0;q<pd.length;q+=4){ RR.push(pd[q]); GG.push(pd[q+1]); BB.push(pd[q+2]); }
+  function med(a){ a.sort(function(x,y){return x-y}); return a[Math.floor(a.length/2)]; }
+  var r=med(RR), g=med(GG), b=med(BB);
+  var h=rgb2hsv(r,g,b); target={r:r,g:g,b:b,h:h.h,s:h.s,v:h.v};
+  makeMatcher(); $("go").disabled=false; syncLabels();
+});
+$("recal").addEventListener("click", function(){ if(sess.on) return; target=null; matcher=null; $("go").disabled=true; $("msg").textContent="Touche le ballon sur l'image pour le repérer"; });
+
+var matcher=null;
+function makeMatcher(){
+  var t=target;
+  if(t.s<0.25){ var lim=70*sens; matcher=function(r,g,b,s){var dr=r-t.r,dg=g-t.g,db=b-t.b; return dr*dr+dg*dg+db*db<lim*lim && s<0.4;}; }
+  else { var smin=Math.max(0.2,t.s*0.5), vmin=Math.max(0.15,t.v*0.5);
+    matcher=function(r,g,b,s,v,h){ if(s<smin||v<vmin) return false; var dh=Math.abs(h-t.h); if(dh>180) dh=360-dh; return dh<=20*sens; }; }
+}
+
+/* ----- Suivi image par image ----- */
+var ball=null, trail=[], lastSeen=-9, lastMask=null, maskN=0;
+function track(now){
+  if(!matcher) return null;
+  pctx.drawImage(cam,0,0,PW,PH);
+  var data=pctx.getImageData(0,0,PW,PH).data, xs=[], ys=[];
+  for(var y=0;y<PH;y++) for(var x=0;x<PW;x++){
+    var i=(y*PW+x)*4, r=data[i],g=data[i+1],b=data[i+2];
+    var mx=Math.max(r,g,b), mn=Math.min(r,g,b), s=mx===0?0:(mx-mn)/mx, v=mx/255, h=0;
+    if(mx!==mn){ var d=mx-mn; if(mx===r)h=((g-b)/d)%6; else if(mx===g)h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if(h<0)h+=360; }
+    if(matcher(r,g,b,s,v,h)){ xs.push(x); ys.push(y); }
+  }
+  lastMask={xs:xs,ys:ys}; var n=xs.length; if(n<Math.max(10,PW*PH*0.0002)) return null;
+  var mx2=0,my2=0,k; for(k=0;k<n;k++){mx2+=xs[k];my2+=ys[k];} mx2/=n; my2/=n;
+  var rad=Math.sqrt(n/Math.PI)*2.2+3, sx=0,sy=0,c=0;
+  for(k=0;k<n;k++){var dx=xs[k]-mx2,dy=ys[k]-my2; if(dx*dx+dy*dy<=rad*rad){sx+=xs[k];sy+=ys[k];c++;}}
+  if(c<Math.max(8,PW*PH*0.00012)) return null;
+  return {x:sx/c/PW, y:sy/c/PH, rad:Math.sqrt(c/Math.PI)/PW};
+}
+
+/* ----- Séance et détection en direct ----- */
+var sess={on:false,count:0,t0:0,dur:30,pts:[],ev:[],speeds:[],lastEvT:-9,lastEvV:0,dir:0,ext:0,extT:0,extX:0,extY:0,pulse:0,cd:0};
+function resetSess(){
+  sess.count=0; sess.pts=[]; sess.ev=[]; sess.speeds=[]; sess.lastEvT=-9; sess.lastEvV=0; sess.dir=0; sess.ext=0; sess.pulse=0; trail=[];
+}
+function addEvent(t,x,y){
+  sess.count++; sess.ev.push({t:t,x:x,y:y}); sess.pulse=1; $("cnt").textContent=sess.count; beep(720,0.05);
+}
+function stepTouches(p){
+  var pts=sess.pts, n=pts.length; pts.push(p); n++;
+  if(n<2) return;
+  var a=pts[n-2], dt=p.t-a.t, v=0;
+  if(dt>0 && dt<=0.3){ var dx=(p.x-a.x)*VW/VH, dy=p.y-a.y; v=Math.sqrt(dx*dx+dy*dy)/dt; }
+  sess.speeds.push({t:p.t,v:v,x:p.x,y:p.y});
+  var S=sess.speeds, m=S.length; if(m<3) return;
+  var s0=S[m-3].v, s1=S[m-2].v, s2=S[m-1].v;
+  // seuil adaptatif sur les 4 dernières secondes
+  var recent=[], i; for(i=m-1;i>=0 && S[i].t>p.t-4;i--) if(S[i].v>0) recent.push(S[i].v);
+  recent.sort(function(a,b){return a-b});
+  var p90=recent.length?recent[Math.floor(recent.length*0.9)]:0, thr=Math.max(0.16,p90*0.38/(sens/1.2));
+  if(s1>thr && s1>=s0 && s1>s2){
+    var pk=S[m-2];
+    if(pk.t-sess.lastEvT<0.18){
+      if(s1>sess.lastEvV && sess.ev.length){ sess.ev[sess.ev.length-1]={t:pk.t,x:pk.x,y:pk.y}; sess.lastEvT=pk.t; sess.lastEvV=s1; }
+    } else { addEvent(pk.t,pk.x,pk.y); sess.lastEvT=pk.t; sess.lastEvV=s1; }
+  }
+}
+function stepTurns(p){
+  sess.pts.push(p); var A=0.09, P=sess.pts, n=P.length;
+  var x=(P[n-1].x + (n>1?P[n-2].x:P[n-1].x))/2;
+  if(n===1){ sess.ext=x; sess.dir=0; sess.extT=p.t; sess.extX=p.x; sess.extY=p.y; return; }
+  if(sess.dir===0){
+    if(x-sess.ext>A){ sess.dir=1; sess.ext=x; sess.extT=p.t; sess.extX=p.x; sess.extY=p.y; }
+    else if(sess.ext-x>A){ sess.dir=-1; sess.ext=x; sess.extT=p.t; sess.extX=p.x; sess.extY=p.y; }
+  } else if(sess.dir===1){
+    if(x>sess.ext){ sess.ext=x; sess.extT=p.t; sess.extX=p.x; sess.extY=p.y; }
+    else if(sess.ext-x>A){ addEvent(sess.extT,sess.extX,sess.extY); sess.dir=-1; sess.ext=x; sess.extT=p.t; sess.extX=p.x; sess.extY=p.y; }
+  } else {
+    if(x<sess.ext){ sess.ext=x; sess.extT=p.t; sess.extX=p.x; sess.extY=p.y; }
+    else if(x-sess.ext>A){ addEvent(sess.extT,sess.extX,sess.extY); sess.dir=1; sess.ext=x; sess.extT=p.t; sess.extX=p.x; sess.extY=p.y; }
+  }
+}
+
+$("go").addEventListener("click", function(){
+  if(sess.on){ endSess(true); return; }
+  if(!target) return;
+  try{ AC = AC || new (window.AudioContext||window.webkitAudioContext)(); if(AC.resume) AC.resume(); }catch(e){}
+  resetSess(); sess.on=true; sess.cd=3; sess.dur=parseInt($("durs").value,10); sess.t0=0;
+  $("res").style.display="none"; $("go").textContent="■ Stop"; $("cnt").textContent="0"; $("rt").textContent="0"; $("tm").textContent=sess.dur;
+  $("msg").textContent=curEx().conseil;
+  var cdEnd = performance.now()+3000;
+  (function count(){
+    var left=Math.ceil((cdEnd-performance.now())/1000);
+    if(!sess.on) { $("big").textContent=""; return; }
+    if(left>0){ $("big").textContent=left; if(sess.cd!==left){ sess.cd=left; beep(500,0.1);} setTimeout(count,100); }
+    else { $("big").textContent="GO"; beep(900,0.25); setTimeout(function(){$("big").textContent="";},500); sess.cd=0; sess.t0=performance.now(); }
+  })();
+});
+
+function endSess(manual){
+  if(!sess.on) return;
+  sess.on=false; $("go").textContent="▶ Départ"; $("big").textContent="";
+  if(sess.cd>0 && !sess.t0){ return; }
+  beep(300,0.4);
+  var e=curEx(), pts=sess.pts, act = pts.length>1 ? pts[pts.length-1].t - pts[0].t : 0;
+  var el = sess.t0 ? Math.min(sess.dur,(performance.now()-sess.t0)/1000) : 0;
+  var base = Math.max(el, 1), rate = sess.count/base*30;
+  var times=sess.ev.map(function(x){return x.t}), cv=null;
+  if(times.length>=4){ var d=[],i; for(i=1;i<times.length;i++) d.push(times[i]-times[i-1]); var m=d.reduce(function(a,b){return a+b},0)/d.length; var s=Math.sqrt(d.reduce(function(a,b){return a+(b-m)*(b-m)},0)/d.length); cv=m>0?s/m:null; }
+  var seenPct = Math.round(Math.min(1, (pts.length/Math.max(1,sess.frames||1)))*100);
+  var pct=Math.min(100,Math.round(rate/e.cible*100));
+  var cvTxt = cv===null?"–":(cv<0.25?"Régulier":cv<0.5?"Correct":"Irrégulier");
+  var tip = rate>=e.cible ? "Objectif atteint ! Passe à la vitesse supérieure ou vise un rythme parfaitement régulier." : pct>=70 ? "Presque ! Encore un peu de rythme." : "Commence par la régularité : touches courtes, ballon collé, vitesse ensuite.";
+  if(cv!==null && cv>=0.5) tip += " Ton rythme varie beaucoup : travaille un tempo constant.";
+  if(seenPct<45) tip += " Le ballon a souvent été perdu : plus de lumière ou un ballon plus contrasté aideront (le décompte est alors sous-estimé).";
+  $("res").innerHTML='<h2>'+e.titre+'</h2><div class="grid">'+
+    '<div class="st"><b>'+sess.count+'</b><span>'+e.unite+'</span></div>'+
+    '<div class="st"><b>'+Math.round(rate)+'</b><span>'+e.unite+' / 30 s</span></div>'+
+    '<div class="st"><b>'+cvTxt+'</b><span>rythme</span></div>'+
+    '<div class="st"><b>'+seenPct+' %</b><span>ballon suivi</span></div></div>'+
+    '<div class="bar"><i style="width:'+pct+'%"></i></div><div style="color:#9db0a2;font-size:14px">Objectif '+e.cible+' '+e.unite+' / 30 s — '+pct+' %</div>'+
+    '<div class="tips" style="margin-top:10px">'+tip+'</div>'+
+    '<button id="rok">Rejouer</button>';
+  $("res").style.display="block"; $("rok").onclick=function(){ $("res").style.display="none"; };
+  saveRes({ex:e.id,n:sess.count,rate:Math.round(rate*10)/10,cv:cv});
+}
+var KEY="tf-hist-v1";
+function saveRes(r){ try{ var h=JSON.parse(localStorage.getItem(KEY)||"[]"); if(!Array.isArray(h)) h=[]; r.d=new Date().toISOString(); h.push(r); localStorage.setItem(KEY,JSON.stringify(h.slice(-60))); }catch(e){} }
+
+/* ----- Boucle d'affichage (réalité augmentée) ----- */
+sess.frames=0;
+var lastProc=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  if(!stream) return;
+  var now=ts/1000, running = sess.on && sess.t0>0;
+  var el = running ? (performance.now()-sess.t0)/1000 : 0;
+  if(running){
+    var left=Math.max(0, sess.dur-el); $("tm").textContent=Math.ceil(left);
+    $("rt").textContent = el>2 ? Math.round(sess.count/el*30) : 0;
+    if(left<=0){ endSess(false); }
+  }
+  // analyse environ 25 fois par seconde
+  var found=null;
+  if(matcher && ts-lastProc>=38){
+    lastProc=ts; found=track(now);
+    if(running) sess.frames++;
+    if(found){
+      ball=found; lastSeen=now; trail.push({x:found.x,y:found.y,t:now});
+      if(running){ var p={t:el,x:found.x,y:found.y}; if(curEx().mode==="touches") stepTouches(p); else stepTurns(p); }
+    }
+  }
+  while(trail.length && now-trail[0].t>1.2) trail.shift();
+  draw(now, running);
+}
+function draw(now, running){
+  octx.clearRect(0,0,VW,VH);
+  var e=curEx(), w=VW, h=VH;
+  // zones cibles gauche/droite pour les exercices de direction
+  if(e.mode==="slalom"){
+    var zw=w*0.16;
+    octx.fillStyle="rgba(61,196,118,0.18)"; octx.fillRect(0,0,zw,h); octx.fillRect(w-zw,0,zw,h);
+    octx.strokeStyle="rgba(61,196,118,.7)"; octx.lineWidth=3; octx.setLineDash([10,8]);
+    octx.beginPath(); octx.moveTo(zw,0); octx.lineTo(zw,h); octx.moveTo(w-zw,0); octx.lineTo(w-zw,h); octx.stroke(); octx.setLineDash([]);
+  }
+  // détection visible (points violets)
+  if(lastMask && $("dbg").checked){
+    var sc=w/PW, L=lastMask.xs.length, st=Math.max(1,Math.floor(L/5000));
+    octx.fillStyle="rgba(255,0,255,.6)";
+    for(var m=0;m<L;m+=st) octx.fillRect(lastMask.xs[m]*sc,lastMask.ys[m]*sc,sc+1,sc+1);
+  }
+  if(matcher && !running && lastMask){
+    var N=lastMask.xs.length;
+    $("msg").textContent = (now-lastSeen<0.4) ? "✓ Ballon repéré — lance le départ" : (N>0 ? "Couleur trouvée mais trop peu de points ("+N+") : rapproche-toi ou monte la sensibilité (⚙)" : "Rien ne correspond à cette couleur : retouche le ballon ou monte la sensibilité (⚙)");
+  }
+  // traînée
+  for(var i=1;i<trail.length;i++){
+    var a=trail[i-1], b=trail[i], age=(now-b.t)/1.2;
+    octx.strokeStyle="rgba(255,200,60,"+(1-age).toFixed(2)+")"; octx.lineWidth=2+8*(1-age); octx.lineCap="round";
+    octx.beginPath(); octx.moveTo(a.x*w,a.y*h); octx.lineTo(b.x*w,b.y*h); octx.stroke();
+  }
+  // anneau autour du ballon
+  if(ball && now-lastSeen<0.4){
+    var r=Math.max(18, ball.rad*w*1.6), cx=ball.x*w, cy=ball.y*h;
+    octx.lineWidth=4; octx.strokeStyle = running ? "#3dc476" : "#ffffff";
+    octx.beginPath(); octx.arc(cx,cy,r,0,7); octx.stroke();
+    if(sess.pulse>0){ octx.strokeStyle="rgba(255,255,255,"+sess.pulse+")"; octx.lineWidth=6; octx.beginPath(); octx.arc(cx,cy,r+(1-sess.pulse)*50,0,7); octx.stroke(); sess.pulse-=0.08; }
+  } else if(matcher && running){
+    $("msg").textContent="Ballon perdu : remets-le dans l'image";
+  }
+  // marqueurs des derniers événements
+  var ev=sess.ev, from=Math.max(0,ev.length-6);
+  for(var j=from;j<ev.length;j++){ octx.fillStyle="rgba(255,255,255,.85)"; octx.beginPath(); octx.arc(ev[j].x*w,ev[j].y*h,7,0,7); octx.fill(); }
+  // repère de couleur choisie
+  if(!sess.on && !target){ octx.strokeStyle="rgba(255,255,255,.5)"; octx.lineWidth=2; octx.setLineDash([8,8]); octx.strokeRect(w*0.15,h*0.25,w*0.7,h*0.6); octx.setLineDash([]); }
+}
+</script>
+</body>
+</html>
