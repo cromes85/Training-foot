@@ -274,6 +274,19 @@ function track(now,gate){
     if(mx!==mn){ var d=mx-mn; if(mx===r)h=((g-b)/d)%6; else if(mx===g)h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if(h<0)h+=360; }
     if(matcher(r,g,b,s,v,h)){ xs.push(x); ys.push(y); }
   }
+  var cw=Math.ceil(PW/8), ch=Math.ceil(PH/8), cnt=new Uint16Array(cw*ch), q;
+  for(q=0;q<xs.length;q++) cnt[(ys[q]>>3)*cw+(xs[q]>>3)]++;
+  var lab=new Int16Array(cw*ch), best=0, bestSum=0, L=0;
+  for(var c0=0;c0<cw*ch;c0++){
+    if(cnt[c0]<3||lab[c0]) continue; L++; var stack=[c0], sum=0; lab[c0]=L;
+    while(stack.length){ var cc=stack.pop(); sum+=cnt[cc]; var cx0=cc%cw, cy0=(cc/cw)|0;
+      for(var oy=-1;oy<=1;oy++) for(var ox=-1;ox<=1;ox++){ var nx=cx0+ox, ny=cy0+oy; if(nx<0||ny<0||nx>=cw||ny>=ch) continue; var ni=ny*cw+nx; if(cnt[ni]>=3&&!lab[ni]){ lab[ni]=L; stack.push(ni); } } }
+    if(sum>bestSum){ bestSum=sum; best=L; }
+  }
+  if(!best){ lastMask={xs:[],ys:[]}; return null; }
+  var fx2=[], fy2=[];
+  for(q=0;q<xs.length;q++){ if(lab[(ys[q]>>3)*cw+(xs[q]>>3)]===best){ fx2.push(xs[q]); fy2.push(ys[q]); } }
+  xs=fx2; ys=fy2;
   lastMask={xs:xs,ys:ys}; var n=xs.length; if(n<Math.max(10,PW*PH*0.0002)) return null;
   var mx2=0,my2=0,k; for(k=0;k<n;k++){mx2+=xs[k];my2+=ys[k];} mx2/=n; my2/=n;
   var rad=Math.sqrt(n/Math.PI)*2.2+3, sx=0,sy=0,c=0;
@@ -394,7 +407,7 @@ function loop(ts){
   }
   var gate=null;
   if(ball && now-lastSeen<1.5) gate={x:ball.x,y:ball.y,r:0.10+0.30*(now-lastSeen)+ball.rad};
-  if(!found && matcher && (!usingAI || gate) && !(usingAI && ai.last && now-ai.last.t<0.3) && ts-lastProc>=38){
+  if(!found && matcher && !(usingAI && ai.last && now-ai.last.t<0.3) && ts-lastProc>=38){
     lastProc=ts; found=track(now,gate);
     if(running) sess.frames++;
   }
