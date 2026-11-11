@@ -166,7 +166,7 @@ var started=false;
 $("allow").addEventListener("click", startCam);
 $("cfg").addEventListener("click", function(){ var p=$("panel"); p.style.display = p.style.display==="flex" ? "none" : "flex"; setTimeout(fit,50); });
 $("sens").addEventListener("input", function(){ sens=parseFloat(this.value); if(targets.length) makeMatcher(); });
-$("flip").addEventListener("click", function(){ facing = facing==="user" ? "environment" : "user"; target=null; targets=[]; matcher=null; $("go").disabled=!ai.ready; startCam(); });
+$("flip").addEventListener("click", function(){ facing = facing==="user" ? "environment" : "user"; target=null; targets=[]; matcher=null; ai.learned=false; $("go").disabled=!ai.ready; startCam(); });
 $("wide").addEventListener("click", function(){
   var n=$("camnote"); n.textContent="";
   try{
@@ -197,14 +197,14 @@ stage.addEventListener("click", function(ev){
   var h=rgb2hsv(r,g,b); target={r:r,g:g,b:b,h:h.h,s:h.s,v:h.v}; targets.push(target); if(targets.length>4) targets.shift();
   makeMatcher(); $("go").disabled=false; syncLabels();
 });
-$("recal").addEventListener("click", function(){ if(sess.on) return; target=null; targets=[]; matcher=null; lastMask=null; $("go").disabled=!ai.ready; $("msg").textContent="Touche le ballon sur l'image pour le repérer"; });
+$("recal").addEventListener("click", function(){ if(sess.on) return; target=null; targets=[]; matcher=null; lastMask=null; ai.learned=false; $("go").disabled=!ai.ready; $("msg").textContent="Touche le ballon sur l'image pour le repérer"; });
 
 var matcher=null;
 function buildOne(t){
   var f;
   if(t.s<0.25){ var lim=70*sens; f=function(r,g,b,s){var dr=r-t.r,dg=g-t.g,db=b-t.b; return dr*dr+dg*dg+db*db<lim*lim && s<0.4;}; }
-  else { var smin=Math.max(0.2,t.s*0.5), vmin=Math.max(0.15,t.v*0.5);
-    f=function(r,g,b,s,v,h){ if(s<smin||v<vmin) return false; var dh=Math.abs(h-t.h); if(dh>180) dh=360-dh; return dh<=20*sens; }; }
+  else { var smin=Math.max(0.25,t.s*0.65), vmin=Math.max(0.15,t.v*0.5);
+    f=function(r,g,b,s,v,h){ if(s<smin||v<vmin) return false; var dh=Math.abs(h-t.h); if(dh>180) dh=360-dh; return dh<=14*sens; }; }
   return f;
 }
 function makeMatcher(){
@@ -225,23 +225,50 @@ function loadAI(){
    .catch(function(){ ai.loading=false; ai.failed=true; $("msg").textContent="IA indisponible (réseau ?) : touche le ballon sur l'image pour utiliser le suivi par couleur."; });
 }
 function aiOn(){ return ai.ready && $("aicb").checked; }
+function learnColor(cx,cy,rad){
+  try{
+    pctx.drawImage(cam,0,0,PW,PH);
+    var R=Math.max(3,Math.round(rad*PW*0.55)), x0=Math.max(0,Math.round(cx*PW)-R), y0=Math.max(0,Math.round(cy*PH)-R);
+    var x1=Math.min(PW-1,Math.round(cx*PW)+R), y1=Math.min(PH-1,Math.round(cy*PH)+R);
+    var d=pctx.getImageData(x0,y0,x1-x0+1,y1-y0+1).data, RR=[],GG=[],BB=[];
+    for(var q=0;q<d.length;q+=4){ var hv=rgb2hsv(d[q],d[q+1],d[q+2]); if(hv.s>0.3 && hv.v>0.35){ RR.push(d[q]); GG.push(d[q+1]); BB.push(d[q+2]); } }
+    if(RR.length<8) return;
+    var med=function(a){ a.sort(function(x,y){return x-y}); return a[Math.floor(a.length/2)]; };
+    var r=med(RR), g=med(GG), b=med(BB), h=rgb2hsv(r,g,b);
+    target={r:r,g:g,b:b,h:h.h,s:h.s,v:h.v}; targets=[target]; makeMatcher(); ai.learned=true;
+  }catch(e){}
+}
 function runAI(){
   if(!aiOn()||ai.busy) return; ai.busy=true;
-  ai.model.detect(cam,6,0.15).then(function(preds){
-    var best=null; preds.forEach(function(p){ if(p.class==="sports ball" && (!best||p.score>best.score)) best=p; });
+  ai.model.detect(cam,8,0.15).then(function(preds){
+    var tnow=performance.now()/1000, recent=ai.last && tnow-ai.last.t<1.5, best=null, bs=-9;
+    preds.forEach(function(p){
+      if(p.class!=="sports ball") return;
+      var cx=(p.bbox[0]+p.bbox[2]/2)/VW, cy=(p.bbox[1]+p.bbox[3]/2)/VH, area=p.bbox[2]*p.bbox[3]/(VW*VH), sc;
+      if(recent){
+        var dx=cx-ai.last.x, dy=(cy-ai.last.y)*VH/VW, d=Math.sqrt(dx*dx+dy*dy);
+        if(d>0.12+0.35*(tnow-ai.last.t)+ai.last.rad) return;
+        sc=p.score-d;
+      } else sc=p.score*Math.sqrt(area);
+      if(sc>bs){ bs=sc; best=p; }
+    });
     if(sess.on && sess.t0>0) sess.frames++;
-    if(best){ ai.last={x:(best.bbox[0]+best.bbox[2]/2)/VW, y:(best.bbox[1]+best.bbox[3]/2)/VH, rad:Math.max(best.bbox[2],best.bbox[3])/2/VW, t:performance.now()/1000, seq:++ai.seq}; }
+    if(best){
+      ai.last={x:(best.bbox[0]+best.bbox[2]/2)/VW, y:(best.bbox[1]+best.bbox[3]/2)/VH, rad:Math.max(best.bbox[2],best.bbox[3])/2/VW, t:tnow, seq:++ai.seq};
+      if(!ai.learned && !targets.length && best.score>0.35) learnColor(ai.last.x,ai.last.y,ai.last.rad);
+    }
     ai.busy=false;
   }).catch(function(){ ai.busy=false; });
 }
 
 /* ----- Suivi image par image ----- */
 var ball=null, trail=[], lastSeen=-9, lastMask=null, maskN=0;
-function track(now){
+function track(now,gate){
   if(!matcher) return null;
   pctx.drawImage(cam,0,0,PW,PH);
   var data=pctx.getImageData(0,0,PW,PH).data, xs=[], ys=[];
   for(var y=0;y<PH;y++) for(var x=0;x<PW;x++){
+    if(gate){ var ddx=x/PW-gate.x, ddy=(y/PH-gate.y)*PH/PW; if(ddx*ddx+ddy*ddy>gate.r*gate.r) continue; }
     var i=(y*PW+x)*4, r=data[i],g=data[i+1],b=data[i+2];
     var mx=Math.max(r,g,b), mn=Math.min(r,g,b), s=mx===0?0:(mx-mn)/mx, v=mx/255, h=0;
     if(mx!==mn){ var d=mx-mn; if(mx===r)h=((g-b)/d)%6; else if(mx===g)h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if(h<0)h+=360; }
@@ -365,8 +392,10 @@ function loop(ts){
       found={x:ai.last.x,y:ai.last.y,rad:ai.last.rad};
     }
   }
-  if(!found && matcher && !(usingAI && ai.last && now-ai.last.t<0.6) && ts-lastProc>=38){
-    lastProc=ts; found=track(now);
+  var gate=null;
+  if(ball && now-lastSeen<1.5) gate={x:ball.x,y:ball.y,r:0.10+0.30*(now-lastSeen)+ball.rad};
+  if(!found && matcher && (!usingAI || gate) && !(usingAI && ai.last && now-ai.last.t<0.3) && ts-lastProc>=38){
+    lastProc=ts; found=track(now,gate);
     if(running) sess.frames++;
   }
   if(found){
@@ -410,6 +439,10 @@ function draw(now, running){
     octx.lineWidth=4; octx.strokeStyle = running ? "#3dc476" : "#ffffff";
     octx.beginPath(); octx.arc(cx,cy,r,0,7); octx.stroke();
     if(sess.pulse>0){ octx.strokeStyle="rgba(255,255,255,"+sess.pulse+")"; octx.lineWidth=6; octx.beginPath(); octx.arc(cx,cy,r+(1-sess.pulse)*50,0,7); octx.stroke(); sess.pulse-=0.08; }
+  } else if(ball && now-lastSeen<1.5){
+    octx.setLineDash([8,8]); octx.lineWidth=3; octx.strokeStyle="rgba(255,200,60,.8)";
+    octx.beginPath(); octx.arc(ball.x*w,ball.y*h,Math.max(18,ball.rad*w*1.6),0,7); octx.stroke(); octx.setLineDash([]);
+    if(running) $("msg").textContent="Ballon masqué… je garde sa dernière position";
   } else if((matcher||aiOn()) && running){
     $("msg").textContent="Ballon perdu : remets-le dans l'image";
   }
